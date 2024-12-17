@@ -64,7 +64,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = SessionDep):
     db.add(new_product)
     await db.commit()
     await db.refresh(new_product)
-    await manager.broadcast(json.dumps({"id": new_product.id, "name": new_product.name, "price": new_product.price}))
+    await manager.broadcast(json.dumps({"event":"Product create!","id": new_product.id, "name": new_product.name, "price": new_product.price}))
     return new_product
 
 # эндпоинт на обновление данных продукта
@@ -79,6 +79,7 @@ async def update_product(product_id: int, product: ProductCreate, db: AsyncSessi
     db_product.price = product.price
     await db.commit()
     await db.refresh(db_product)
+    await manager.broadcast(json.dumps({"event":"Product update!","id": db_product.id, "name": db_product.name, "price": db_product.price}))
     return db_product
 
 # эндпоинт на удаление продукта из базы
@@ -91,6 +92,7 @@ async def delete_product(product_id: int, db: AsyncSession = SessionDep):
     
     await db.delete(db_product)
     await db.commit()
+    await manager.broadcast(json.dumps({"event":"Product deleted!","id": db_product.id, "name": db_product.name, "price": db_product.price}))
     return {"message": "Product deleted successfully"}
 
 # Scraping function to fetch and store products
