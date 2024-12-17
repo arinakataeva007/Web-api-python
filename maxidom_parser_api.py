@@ -1,11 +1,13 @@
 import asyncio
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from database import AsyncSessionLocal, init_db, Product
 from pydantic import BaseModel
 from selenium import webdriver
 from bs4 import BeautifulSoup
+from starlette.websockets import WebSocketDisconnect
+import json
 
 app = FastAPI()
 
@@ -24,6 +26,20 @@ async def get_session() -> AsyncSession: # type: ignore
         yield session
 
 SessionDep = Depends(get_session)
+
+# создаем объект, который будет хранить все подключения
+class ConnectionManager:
+    def __init__(self):
+        self.connsections: list[WebSocket] = [] # список соединений по вебсокетам
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept() # говорим клиенту, что готовы работать с ним, устанавливаем соединение
+        self.connsections.append(websocket) # добавляем соединение в список
+    async def broadcast(self, data: str): # обходит список подключений и каждому подключению отправляет
+        for conn in self.connsections:
+            await conn.send_text(data)
+
+manager = ConnectionManager()
 
 # эндпоинт на получение всех товаров
 @app.get("/products/", response_model=list[ProductResponse])
@@ -48,6 +64,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = SessionDep):
     db.add(new_product)
     await db.commit()
     await db.refresh(new_product)
+    await manager.broadcast(json.dumps({"id": new_product.id, "name": new_product.name, "price": new_product.price}))
     return new_product
 
 # эндпоинт на обновление данных продукта
@@ -125,3 +142,32 @@ async def parse_and_store_products():
 async def startup_event():
     await init_db()  
     asyncio.create_task(parse_and_store_products())
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(get_session)):
+    await manager.connect(websocket) 
+    try:
+        while True:  
+            data = await websocket.receive_text()
+            print(f"Received data: {data}")
+
+            if data.startswith("get_product:"):
+                try:
+                    product_id = int(data.split(":")[1])
+                    result = await db.execute(select(Product).filter(Product.id == product_id))
+                    product = result.scalars().first()
+
+                    if product:
+                        await websocket.send_json({
+                            "id": product.id,
+                            "name": product.name,
+                            "price": product.price
+                        })
+                    else:
+                        await websocket.send_json({"error": "Product not found"})
+                except (ValueError, IndexError):
+                    await websocket.send_json({"error": "Invalid product request format"})
+            else:
+                await websocket.send_text(data * 10)
+    except WebSocketDisconnect:
+        print("Client disconnected")
