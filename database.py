@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import databases
+from sqlalchemy import Column, Integer, String, Float
 
 # URL для подключения к базе данных
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./products.db"
@@ -29,7 +30,6 @@ Base = declarative_base()
 
 # Инициализация базы данных (создание таблиц)
 async def init_db():
-    # Create all tables in the database (if not exist)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
@@ -39,3 +39,15 @@ async def init_db():
 async def close_db():
     # Закрываем соединение с базой данных
     await engine.dispose()
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    price = Column(Float)
+
+    def __init__(self, name, price):
+        self.name = name
+        self.price = price

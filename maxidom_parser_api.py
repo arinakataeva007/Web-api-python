@@ -2,8 +2,7 @@ import asyncio
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from models import Product
-from database import AsyncSessionLocal, init_db  # Make sure `init_db` is imported
+from database import AsyncSessionLocal, init_db, Product
 from pydantic import BaseModel
 from selenium import webdriver
 from bs4 import BeautifulSoup
@@ -20,21 +19,20 @@ class ProductResponse(ProductCreate):
     class Config:
         orm_mode = True
 
-# Asynchronous database session dependency
 async def get_session() -> AsyncSession: # type: ignore
     async with AsyncSessionLocal() as session:
         yield session
 
 SessionDep = Depends(get_session)
 
-# Endpoint for fetching all products
+# эндпоинт на получение всех товаров
 @app.get("/products/", response_model=list[ProductResponse])
 async def get_products(db: AsyncSession = SessionDep):
     result = await db.execute(select(Product))
     products = result.scalars().all()
     return products
 
-# Endpoint for fetching a single product by ID
+# эндпоинт на подучение товара по id
 @app.get("/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: int, db: AsyncSession = SessionDep):
     result = await db.execute(select(Product).filter(Product.id == product_id))
@@ -43,7 +41,7 @@ async def get_product(product_id: int, db: AsyncSession = SessionDep):
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
-# Endpoint for creating a new product
+# эндпоинт на создание продукта
 @app.post("/products/", response_model=ProductResponse)
 async def create_product(product: ProductCreate, db: AsyncSession = SessionDep):
     new_product = Product(name=product.name, price=product.price)
@@ -52,7 +50,7 @@ async def create_product(product: ProductCreate, db: AsyncSession = SessionDep):
     await db.refresh(new_product)
     return new_product
 
-# Endpoint for updating an existing product
+# эндпоинт на обновление данных продукта
 @app.put("/products/{product_id}", response_model=ProductResponse)
 async def update_product(product_id: int, product: ProductCreate, db: AsyncSession = SessionDep):
     result = await db.execute(select(Product).filter(Product.id == product_id))
@@ -66,7 +64,7 @@ async def update_product(product_id: int, product: ProductCreate, db: AsyncSessi
     await db.refresh(db_product)
     return db_product
 
-# Endpoint for deleting a product
+# эндпоинт на удаление продукта из базы
 @app.delete("/products/{product_id}")
 async def delete_product(product_id: int, db: AsyncSession = SessionDep):
     result = await db.execute(select(Product).filter(Product.id == product_id))
@@ -114,18 +112,16 @@ async def parse_and_store_products():
         else:
             page_url = f"https://www.maxidom.ru{links['href']}"
         print(f"Parsing page: {links['href']}")
-        products_data = await find_products(page_url)  # Use await here
+        products_data = await find_products(page_url) 
         async with AsyncSessionLocal() as db:
             for product, price in products_data:
                 new_product = Product(name=product, price=float(price))
                 db.add(new_product)
-            await db.commit()  # Commit the changes asynchronously
+            await db.commit()
 
     driver.quit()
 
-# On startup, create database tables and start the scraping task
 @app.on_event("startup")
 async def startup_event():
-    await init_db()  # Create tables at startup
-    # Start the parsing task
+    await init_db()  
     asyncio.create_task(parse_and_store_products())
