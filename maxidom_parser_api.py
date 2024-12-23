@@ -27,15 +27,14 @@ async def get_session() -> AsyncSession: # type: ignore
 
 SessionDep = Depends(get_session)
 
-# создаем объект, который будет хранить все подключения
 class ConnectionManager:
     def __init__(self):
-        self.connsections: list[WebSocket] = [] # список соединений по вебсокетам
+        self.connsections: list[WebSocket] = [] 
 
     async def connect(self, websocket: WebSocket):
-        await websocket.accept() # говорим клиенту, что готовы работать с ним, устанавливаем соединение
-        self.connsections.append(websocket) # добавляем соединение в список
-    async def broadcast(self, data: str): # обходит список подключений и каждому подключению отправляет
+        await websocket.accept()
+        self.connsections.append(websocket)
+    async def broadcast(self, data: str):
         for conn in self.connsections:
             await conn.send_text(data)
 
@@ -73,7 +72,9 @@ async def update_product(product_id: int, product: ProductCreate, db: AsyncSessi
     result = await db.execute(select(Product).filter(Product.id == product_id))
     db_product = result.scalars().first()
     if db_product is None:
+        await manager.broadcast(json.dumps({"message": "Product not found"}))
         raise HTTPException(status_code=404, detail="Product not found")
+        
     
     db_product.name = product.name
     db_product.price = product.price
@@ -88,6 +89,7 @@ async def delete_product(product_id: int, db: AsyncSession = SessionDep):
     result = await db.execute(select(Product).filter(Product.id == product_id))
     db_product = result.scalars().first()
     if db_product is None:
+        await manager.broadcast(json.dumps({"message": "Product not found"}))
         raise HTTPException(status_code=404, detail="Product not found")
     
     await db.delete(db_product)
@@ -95,7 +97,7 @@ async def delete_product(product_id: int, db: AsyncSession = SessionDep):
     await manager.broadcast(json.dumps({"event":"Product deleted!","id": db_product.id, "name": db_product.name, "price": db_product.price}))
     return {"message": "Product deleted successfully"}
 
-# Scraping function to fetch and store products
+# функция парсера
 async def parse_and_store_products():
     driver = webdriver.Chrome()
     driver.get('https://www.maxidom.ru/catalog/potolki/')
